@@ -1,4 +1,577 @@
 <!DOCTYPE html>
-<html>
-  <h1>Under constrcution.</h1>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Ultimate Quiz</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        /*
+        =========================================================
+        CSS STYLES
+        =========================================================
+        */
+        :root {
+            --color-primary: #4A148C; /* Deep Purple */
+            --color-secondary: #FFC107; /* Amber/Gold */
+            --color-blue: #2196F3;
+            --color-red: #F44336;
+            --color-yellow: #FFEB3B;
+            --color-green: #4CAF50;
+            --box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
+            --border-radius: 12px;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f0f0;
+            color: #333;
+            text-align: center;
+            transition: background-color 0.5s ease;
+        }
+
+        /* --- Global Layout --- */
+        #game-container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: white;
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+            min-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        h1 { color: var(--color-primary); margin-top: 0; }
+        
+        .role-indicator {
+            padding: 10px;
+            background: var(--color-secondary);
+            color: var(--color-primary);
+            font-weight: bold;
+            border-radius: var(--border-radius);
+            margin-bottom: 20px;
+        }
+
+        /* --- Player Screen Styles --- */
+        .player-view #question-text {
+            font-size: 2em;
+            margin-bottom: 30px;
+            background: var(--color-blue);
+            color: white;
+            padding: 20px;
+            border-radius: var(--border-radius);
+        }
+
+        .player-view #answer-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .player-view .answer-btn {
+            padding: 40px 20px;
+            font-size: 1.5em;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: var(--border-radius);
+            transition: transform 0.2s ease, background-color 0.3s ease;
+            box-shadow: var(--box-shadow);
+            opacity: 0.9;
+        }
+
+        .player-view .answer-btn:hover:not(:disabled) {
+            transform: scale(1.05);
+            opacity: 1;
+        }
+
+        /* Assigning colors to answer buttons */
+        .player-view .answer-btn:nth-child(1) { background-color: var(--color-blue); }
+        .player-view .answer-btn:nth-child(2) { background-color: var(--color-red); }
+        .player-view .answer-btn:nth-child(3) { background-color: var(--color-yellow); }
+        .player-view .answer-btn:nth-child(4) { background-color: var(--color-green); }
+
+        .player-view .answer-btn:disabled {
+            cursor: default;
+            opacity: 0.5;
+            transform: none !important;
+        }
+
+        .player-view #result-message {
+            margin-top: 20px;
+            padding: 15px;
+            font-size: 1.5em;
+            font-weight: bold;
+            border-radius: var(--border-radius);
+            opacity: 0;
+            animation: fadeIn 0.5s forwards;
+        }
+        
+        .correct-answer-feedback { background-color: var(--color-green); color: white; }
+        .incorrect-answer-feedback { background-color: var(--color-red); color: white; }
+        
+        /* --- Host Screen Styles --- */
+        .host-view #host-question-display {
+            background: var(--color-primary);
+            color: white;
+            padding: 30px;
+            font-size: 2em;
+            border-radius: var(--border-radius);
+            margin-bottom: 20px;
+        }
+
+        .host-view #host-answer-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .host-view .answer-stat-box {
+            padding: 20px;
+            border-radius: var(--border-radius);
+            text-align: left;
+            box-shadow: var(--box-shadow);
+            min-height: 150px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: all 0.5s ease;
+        }
+        
+        .host-view .answer-stat-box.correct {
+            border: 5px solid gold;
+        }
+
+        .host-view .answer-stat-box h3 {
+            margin: 0 0 10px 0;
+            font-size: 1.2em;
+        }
+
+        .host-view .answer-count {
+            font-size: 3em;
+            font-weight: bold;
+            align-self: flex-end;
+            transition: transform 0.3s ease;
+        }
+
+        /* Applying colors to host stats */
+        .host-view .answer-stat-box:nth-child(1) { background-color: #BBDEFB; border-left: 10px solid var(--color-blue); }
+        .host-view .answer-stat-box:nth-child(2) { background-color: #FFCDD2; border-left: 10px solid var(--color-red); }
+        .host-view .answer-stat-box:nth-child(3) { background-color: #FFF9C4; border-left: 10px solid var(--color-yellow); }
+        .host-view .answer-stat-box:nth-child(4) { background-color: #C8E6C9; border-left: 10px solid var(--color-green); }
+
+        .host-view #player-scores-list, .host-view #player-join-list {
+            list-style: none;
+            padding: 0;
+            margin: 20px 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+        
+        .host-view #player-scores-list li {
+            background: #eee;
+            padding: 10px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* --- General Animations/Elements --- */
+        .hidden { display: none !important; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .pop-animation {
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0.5); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        .score-change-anim {
+            animation: scoreFlash 0.5s;
+        }
+        
+        @keyframes scoreFlash {
+            0% { background: var(--color-secondary); transform: scale(1.1); }
+            100% { background: #eee; transform: scale(1); }
+        }
+        
+        #next-question-btn {
+            padding: 15px 30px;
+            font-size: 1.5em;
+            background: var(--color-green);
+            color: white;
+            border: none;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+        
+        #next-question-btn:hover {
+            background: #388E3C;
+        }
+        
+        /* --- Join Screen --- */
+        #join-screen {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        #join-screen input {
+            padding: 15px;
+            font-size: 1.2em;
+            border: 2px solid var(--color-primary);
+            border-radius: var(--border-radius);
+            width: 80%;
+            max-width: 400px;
+        }
+        
+        #join-screen button {
+            padding: 15px 30px;
+            font-size: 1.2em;
+            background: var(--color-primary);
+            color: white;
+            border: none;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <h1>The Ultimate Quiz</h1>
+        <div id="role-indicator" class="role-indicator">Loading...</div>
+
+        <div id="join-screen" class="hidden">
+            <h2>Join the Game</h2>
+            <input type="text" id="nickname-input" placeholder="Enter your nickname..." maxlength="15">
+            <button id="join-btn">Join Game</button>
+            <div id="player-join-list"></div>
+        </div>
+        
+        <div id="player-view" class="hidden player-view">
+            <div id="question-text">Waiting for host to start the game...</div>
+            <div id="answer-grid">
+                </div>
+            <div id="result-message" class="hidden"></div>
+            <p id="player-score-display">Your Score: 0</p>
+        </div>
+
+        <div id="host-view" class="hidden host-view">
+            <div id="host-question-display">Welcome, Host. Click 'Next Question' to start.</div>
+            
+            <button id="next-question-btn">Start Game / Next Question</button>
+
+            <div id="host-answer-stats" class="hidden">
+                </div>
+            
+            <h2 id="scores-heading">Live Scores:</h2>
+            <ul id="player-scores-list">
+                </ul>
+        </div>
+    </div>
+
+    <script>
+        /*
+        =========================================================
+        JAVASCRIPT LOGIC
+        =========================================================
+        */
+        const GLITCH_SERVER_URL = "YOUR_GLITCH_PROJECT_URL"; // *** CHANGE THIS *** e.g., "https://my-awesome-kahoot-clone.glitch.me"
+        const socket = io(GLITCH_SERVER_URL);
+
+        // --- Global State ---
+        let isHost = false;
+        let nickname = '';
+        let currentQuestion = null;
+        let hasAnswered = false;
+        
+        // --- DOM Elements ---
+        const $ = selector => document.querySelector(selector);
+        
+        const roleIndicator = $('#role-indicator');
+        const joinScreen = $('#join-screen');
+        const playerView = $('#player-view');
+        const hostView = $('#host-view');
+        
+        const nicknameInput = $('#nickname-input');
+        const joinBtn = $('#join-btn');
+        const nextQuestionBtn = $('#next-question-btn');
+        
+        const questionText = $('#question-text');
+        const answerGrid = $('#answer-grid');
+        const resultMessage = $('#result-message');
+        const playerScoreDisplay = $('#player-score-display');
+        
+        const hostQuestionDisplay = $('#host-question-display');
+        const hostAnswerStats = $('#host-answer-stats');
+        const playerScoresList = $('#player-scores-list');
+        const playerJoinList = $('#player-join-list');
+
+        // --- Initialization ---
+        function init() {
+            // Check for the 'role=host' parameter in the URL
+            isHost = new URLSearchParams(window.location.search).get('role') === 'host';
+            
+            if (isHost) {
+                // Host Setup
+                roleIndicator.textContent = 'ROLE: HOST SCREEN';
+                joinScreen.classList.add('hidden');
+                playerView.classList.add('hidden');
+                hostView.classList.remove('hidden');
+                
+                socket.emit('hostConnect');
+                nextQuestionBtn.onclick = handleNextQuestion;
+            } else {
+                // Player Setup
+                roleIndicator.textContent = 'ROLE: PLAYER DEVICE';
+                hostView.classList.add('hidden');
+                
+                // Show join screen first
+                joinScreen.classList.remove('hidden');
+                joinBtn.onclick = handlePlayerJoin;
+            }
+        }
+        
+        // --- Player Functions ---
+        function handlePlayerJoin() {
+            const name = nicknameInput.value.trim();
+            if (name.length < 2) {
+                alert('Please enter a nickname of at least 2 characters.');
+                return;
+            }
+            nickname = name;
+            
+            joinScreen.classList.add('hidden');
+            playerView.classList.remove('hidden');
+            
+            socket.emit('join', nickname);
+        }
+
+        function createAnswerButtons(answers) {
+            answerGrid.innerHTML = '';
+            resultMessage.classList.add('hidden');
+            hasAnswered = false;
+
+            answers.forEach((text, index) => {
+                const btn = document.createElement('button');
+                btn.classList.add('answer-btn', 'pop-animation');
+                btn.textContent = text;
+                btn.dataset.index = index;
+                btn.onclick = () => handleAnswerSubmit(index);
+                answerGrid.appendChild(btn);
+            });
+        }
+        
+        function handleAnswerSubmit(index) {
+            if (hasAnswered) return;
+            hasAnswered = true;
+
+            // Disable all buttons
+            document.querySelectorAll('.answer-btn').forEach(btn => btn.disabled = true);
+            
+            // Highlight the selected button
+            document.querySelector(`.answer-btn[data-index="${index}"]`).style.opacity = '1';
+            
+            // Placeholder: Time measurement would be here (endTime - startTime)
+            const timeTaken = 5; // Simplified time
+
+            socket.emit('submitAnswer', {
+                answerIndex: index,
+                timeTaken: timeTaken
+            });
+            
+            questionText.textContent = `Answer Locked! Waiting for host...`;
+        }
+        
+        function showPlayerResults(correctIndex) {
+            const btns = document.querySelectorAll('.answer-btn');
+            
+            btns.forEach((btn, index) => {
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+                
+                if (index == correctIndex) {
+                    btn.style.opacity = '1';
+                    btn.classList.add('correct-answer-feedback');
+                }
+            });
+            
+            resultMessage.classList.remove('hidden');
+            
+            const playerAnswer = currentQuestion.answers.indexOf(btns[correctIndex].textContent); // A simplified way to find if the player was correct
+            
+            // Check if player's *selected* answer was the correct one
+            const selectedButton = document.querySelector('.answer-btn:disabled:not([style*="opacity: 0.5"])');
+            if (selectedButton && selectedButton.dataset.index == correctIndex) {
+                resultMessage.textContent = "✅ Correct! Points Added!";
+                resultMessage.classList.remove('incorrect-answer-feedback');
+                resultMessage.classList.add('correct-answer-feedback');
+            } else {
+                resultMessage.textContent = "❌ Incorrect! The correct answer is highlighted.";
+                resultMessage.classList.remove('correct-answer-feedback');
+                resultMessage.classList.add('incorrect-answer-feedback');
+            }
+        }
+        
+        // --- Host Functions ---
+        function handleNextQuestion() {
+            hostAnswerStats.innerHTML = ''; // Clear stats from previous round
+            hostAnswerStats.classList.add('hidden');
+            hostQuestionDisplay.textContent = 'Sending next question...';
+            nextQuestionBtn.disabled = true;
+            nextQuestionBtn.textContent = 'Question is live...';
+            socket.emit('nextQuestion');
+        }
+
+        function displayHostQuestion(q) {
+            hostQuestionDisplay.textContent = q.question;
+            hostQuestionDisplay.style.backgroundColor = var('--color-primary'); // Reset color
+            
+            hostAnswerStats.innerHTML = ''; // Clear previous answer boxes
+            hostAnswerStats.classList.remove('hidden');
+            
+            q.answers.forEach((text, index) => {
+                const box = document.createElement('div');
+                box.classList.add('answer-stat-box');
+                box.dataset.index = index;
+                box.innerHTML = `
+                    <h3>Option ${index + 1}: ${text}</h3>
+                    <div class="answer-count">0</div>
+                `;
+                hostAnswerStats.appendChild(box);
+            });
+        }
+        
+        function updateHostAnswerCount(answerIndex) {
+            const countEl = document.querySelector(`.host-view .answer-stat-box[data-index="${answerIndex}"] .answer-count`);
+            if (countEl) {
+                let count = parseInt(countEl.textContent);
+                countEl.textContent = count + 1;
+                countEl.classList.add('pop-animation');
+                setTimeout(() => countEl.classList.remove('pop-animation'), 300);
+            }
+        }
+        
+        function showHostResults(results, currentQ) {
+            nextQuestionBtn.disabled = false;
+            nextQuestionBtn.textContent = 'Next Question';
+            
+            hostQuestionDisplay.textContent = `Results: ${currentQ.question}`;
+            hostQuestionDisplay.style.backgroundColor = var('--color-secondary'); 
+
+            results.answerCounts.forEach((count, index) => {
+                const box = document.querySelector(`.host-view .answer-stat-box[data-index="${index}"]`);
+                const countEl = box.querySelector('.answer-count');
+                countEl.textContent = count;
+                
+                // Highlight the correct answer on the host screen
+                if (index === results.correctAnswerIndex) {
+                    box.classList.add('correct');
+                }
+            });
+            
+            // Update scores after showing results
+            updateScoreboard(results.newScores);
+        }
+
+        // --- Common Functions ---
+        function updateScoreboard(scores) {
+            playerScoresList.innerHTML = '';
+            playerJoinList.innerHTML = '';
+            
+            // Convert to array and sort by score
+            const sortedScores = Object.values(scores).sort((a, b) => b.score - a.score);
+            
+            sortedScores.forEach(player => {
+                const li = document.createElement('li');
+                li.textContent = `${player.name}: ${player.score}`;
+                li.id = `score-${player.name.replace(/\s+/g, '-')}`;
+                playerScoresList.appendChild(li);
+                
+                const joinLi = document.createElement('li');
+                joinLi.textContent = player.name;
+                playerJoinList.appendChild(joinLi);
+                
+                // Animate score changes (simplified)
+                if (isHost) {
+                   // This is complex to track. For simplicity, we just flash the list
+                   playerScoresList.classList.add('score-change-anim');
+                   setTimeout(() => playerScoresList.classList.remove('score-change-anim'), 500);
+                } else if (player.name === nickname) {
+                    playerScoreDisplay.textContent = `Your Score: ${player.score}`;
+                    playerScoreDisplay.classList.add('score-change-anim');
+                    setTimeout(() => playerScoreDisplay.classList.remove('score-change-anim'), 500);
+                }
+            });
+        }
+        
+        // --- Socket.IO Listeners ---
+        
+        // Host only: Server confirmed question was sent
+        socket.on('questionSent', (q) => {
+            currentQuestion = q; // Host stores the question with correct answer index
+            displayHostQuestion(q);
+        });
+        
+        // Player only: Receive a new question
+        socket.on('newQuestion', (q) => {
+            if (!isHost) {
+                currentQuestion = q;
+                questionText.textContent = q.question;
+                createAnswerButtons(q.answers);
+            }
+        });
+
+        // Host only: Real-time update of player answers
+        socket.on('answerUpdate', (answerIndex) => {
+            if (isHost) {
+                updateHostAnswerCount(answerIndex);
+            }
+        });
+        
+        // All clients: Receive question results
+        socket.on('questionResults', (results) => {
+            if (isHost) {
+                showHostResults(results, currentQuestion);
+            } else {
+                showPlayerResults(results.correctAnswerIndex);
+            }
+            updateScoreboard(results.newScores);
+        });
+
+        // All clients: Player list update (used on join screen and host scoreboard)
+        socket.on('playerListUpdate', (scores) => {
+            updateScoreboard(scores);
+        });
+        
+        socket.on('gameOver', (finalScores) => {
+            alert('Game Over! Check the scoreboard for final standings!');
+            updateScoreboard(finalScores);
+            hostQuestionDisplay.textContent = 'GAME OVER! Refresh to start a new game.';
+            nextQuestionBtn.classList.add('hidden');
+        });
+
+        // Start the application
+        init();
+    </script>
+</body>
 </html>
